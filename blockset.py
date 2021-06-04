@@ -10,8 +10,7 @@ from lxml import etree as ET
 import subprocess
 
 maillog_default = "/var/log/mail.log"
-#alist_file = "/root/sasl_attacker_list"
-#ipset_file = "/etc/firewalld/ipsets/blocklist.xml"
+
 ipset_file = "blocklist.xml"
 ipset_ufw = "/etc/ufw/before.rules"
 ipset_start_line = "blacklist-ipset-S"
