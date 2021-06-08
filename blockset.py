@@ -74,15 +74,15 @@ def ipv4adr(str):
     return a
 
 # オプション解析
-parser = argparse.ArgumentParser(description='maillogck the another implement.')
+parser = argparse.ArgumentParser(description='blockset.py collection of unauthorized access list and restart firewall(ufw)')
 parser.add_argument('logfile', nargs='?', help='input log file default:' + maillog_default, default='')
 parser.add_argument('-n', '--none', action='store_true', help='Check only mode.')
-parser.add_argument('-f', '--force', action='store_true', help='ipset force update, unless new record.')
+parser.add_argument('-f', '--force', action='store_true', help='bloclist force update, unless new record.')
 parser.add_argument('-d', '--debug', action='store_true', help='debug print mode')
-parser.add_argument('-u', '--update', action='store_true', help='ipset update')
+parser.add_argument('-u', '--update', action='store_true', help='blocklist update and restart firewall(ufw)')
 parser.add_argument('-o', '--orderck', type=int_tuple, metavar='MASK,COUNT', help='ipset order ckeck')
 parser.add_argument('-c', '--count', type=int, help='abuse count', default = 5)
-parser.add_argument('-a', '--address', type=ipv4adr, help='address for blacklist')
+parser.add_argument('-a', '--address', type=ipv4adr, help='individually address entry to blacklist')
 
 args = parser.parse_args()
 
