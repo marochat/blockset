@@ -8,6 +8,8 @@ import numpy as np
 #import xml.etree.ElementTree as ET
 from lxml import etree as ET
 import subprocess
+# logrottateのgzipファイルに対応するため
+import gzip
 
 maillog_default = "/var/log/mail.log"
 
@@ -105,9 +107,9 @@ if len(args.logfile) == 0:
 
 iplist = []
 
-# メールログから不正アクセスに相当するIPアドレスを取り出してリスト化する
+# メールログから不正アクセスに相当するIPアドレスを取り出してリスト化する(gzipファイルはgzipモジュールのOPENを使用する)
 try:
-    with open(args.logfile, 'r', encoding='utf-8') as fh:
+    with open(args.logfile, 'r', encoding='utf-8') if not re.search('\.gz$', args.logfile) else gzip.open(args.logfile, 'rt') as fh:
         for line in fh:
             line = line.rstrip('\n')
             res = re.match('^.+\[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\].+ SASL [A-Z]+ authentication failed.*$', line)
