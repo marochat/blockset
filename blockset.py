@@ -13,7 +13,7 @@ import gzip
 
 from logging import getLogger, StreamHandler, DEBUG, INFO
 
-loggerLevel = DEBUG
+loggerLevel = INFO
 
 # for logger おまじない
 logger = getLogger(__name__)
