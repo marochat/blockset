@@ -11,6 +11,21 @@ import subprocess
 # logrottateのgzipファイルに対応するため
 import gzip
 
+from logging import getLogger, StreamHandler, DEBUG, INFO
+
+loggerLevel = DEBUG
+
+# for logger おまじない
+logger = getLogger(__name__)
+handler = StreamHandler()
+handler.setLevel(loggerLevel)
+logger.setLevel(loggerLevel)
+logger.addHandler(handler)
+logger.propagate = False
+
+# logger.info("info test")
+# logger.debug("debug test")
+
 maillog_default = "/var/log/mail.log"
 
 ipset_file = "blocklist.xml"
@@ -90,19 +105,19 @@ args = parser.parse_args()
 
 # オプション分岐
 if args.none:
-    sys.stderr.write('Check only mode.\n')
+    logger.info('Check only mode.')
 if args.force:
-    sys.stderr.write('firewalld(ipset) force update.\n')
+    logger.info('firewalld(ipset) force update.')
 if args.debug:
-    sys.stderr.write('Debug print mode.\n')
+    logger.info('Debug print mode.')
 if args.orderck:
-    sys.stderr.write('ipset order mode.\n')
-    sys.stderr.write('mask bits : ' + str(args.orderck[0]) + '\n') 
-    sys.stderr.write('count     : ' + str(args.orderck[1]) + '\n') 
+    logger.info('ipset order mode.')
+    logger.info('mask bits : ' + str(args.orderck[0])) 
+    logger.info('count     : ' + str(args.orderck[1])) 
 
 # 処理開始-解析ログファイルの選択
 if len(args.logfile) == 0:
-    sys.stderr.write('use defaule.\n')
+    logger.info('use defaule.')
     args.logfile = maillog_default
 
 iplist = []
@@ -119,7 +134,7 @@ try:
             if res:
                 iplist.append(res.group(1))
 except FileNotFoundError:
-    sys.stderr.write('file not found! : ' + args.logfile + '\n')
+    logger.error('file not found! : %s' % (args.logfile))
 
 # IPアドレス、登場回数のタプルリストにする
 items = array_count(iplist)
@@ -133,7 +148,7 @@ dlist = []
 # 対象ログに登場したIPアドレス集計を表示する（Debug）
 if args.debug:
     for k in items:
-        sys.stderr.write('Redord : %s (%d)\n' % (k, items[k]))
+        logger.info('Redord : %s (%d)' % (k, items[k]))
 
 #一定数(5)以上の出現回数の物のみの IPV4アドレスリストを作成する
 iplist = list(map(lambda t: ipv4adrset(t[0]), filter(lambda t: t[1] >= args.count, items.items())))
@@ -154,13 +169,17 @@ try:
         for line in fi:
             res = re.match('^.+ ([0-9./]+) .*', line)
             if res:
-                #print(res[1])
+                logger.debug(res[1])
                 blklst.append(ipv4adrset(res[1]))
                 newips.append(res[1])
             if re.search(ipset_end_line, line):
                 break
 except FileNotFoundError:
-    sys.stderr.write('file not found! : ' + ipset_ufw + '\n')
+    logger.error('file not found! : %s' % (ipset_ufw))
+    exit('file not found')
+except PermissionError:
+    logger.error('can\'t read %s, please run as superuser!' % (ipset_ufw))
+    exit('permisson errro')
 
 # 今回登場したblocklist候補を登録済でないものに絞る
 iplist = list(filter(lambda ip: ip not in blklst, iplist))
@@ -170,12 +189,12 @@ iplist.sort(key = lambda x: x.ips)
 for k in iplist:
     s = '.'.join(map(lambda i: str(i), k.ips))
     if not args.orderck:
-        sys.stderr.write('New record : %s (%d)\n' % (s, items[s]))
+        logger.info('New record : %s (%d)' % (s, items[s]))
 
 # 新規分がなければ終了
 if len(iplist) == 0:
-    sys.stderr.write('no action\n')
     if not (args.force or args.orderck):
+        logger.info('no action')
         exit(0)
 
 # ipset のIPアドレスリストに iplist を加える
@@ -234,12 +253,16 @@ try:
         for line in fi:
             write_data += line
 except FileNotFoundError:
-    sys.stderr.write('before.rules file not found!\n')
+    logger.error('before.rules file not found!')
+    exit(1)
+except PermissionError:
+    logger.error('can\'t write to before.rules please check permission!')
+    exit(1)
 if not args.update:
     # print(write_data)
     exit(0)
 else:
-    sys.stderr.write('update ufw before.rules\n')
+    logger.info('update ufw before.rules')
     with open(ipset_ufw, 'w', encoding='utf-8') as fo:
         fo.write(write_data)
     subprocess.call(['/usr/sbin/ufw','reload'])
