@@ -23,18 +23,12 @@ logger.setLevel(loggerLevel)
 logger.addHandler(handler)
 logger.propagate = False
 
-# logger.info("info test")
-# logger.debug("debug test")
-
 maillog_default = "/var/log/mail.log"
 
 ipset_file = "blocklist.xml"
 ipset_ufw = "/etc/ufw/before.rules"
 ipset_start_line = "blacklist-ipset-S"
 ipset_end_line = "blacklist-ipset-E"
-
-#iptables_tmpl = "/etc/sysconfig/iptables.tmpl"
-#iptables_file = "/etc/sysconfig/iptables"
 
 # 関数定義
 # リスト中の重複数を集計して、データと登場回数のタプルのリストを作成して返す
@@ -112,32 +106,58 @@ if args.debug:
     logger.info('Debug print mode.')
 if args.orderck:
     logger.info('ipset order mode.')
-    logger.info('mask bits : ' + str(args.orderck[0])) 
-    logger.info('count     : ' + str(args.orderck[1])) 
+    logger.info('mask bits : %s' % str(args.orderck[0])) 
+    logger.info('count     : %s' % str(args.orderck[1])) 
 
 # 処理開始-解析ログファイルの選択
 if len(args.logfile) == 0:
-    logger.info('use defaule.')
+    logger.info('use default.')
     args.logfile = maillog_default
 
-iplist = []
-
 # メールログから不正アクセスに相当するIPアドレスを取り出してリスト化する(gzipファイルはgzipモジュールのOPENを使用する)
-try:
-    with open(args.logfile, 'r', encoding='utf-8') if not re.search('\.gz$', args.logfile) else gzip.open(args.logfile, 'rt') as fh:
-        for line in fh:
-            line = line.rstrip('\n')
-            res = re.match('^.+\[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\].+ SASL [A-Z]+ authentication failed.*$', line)
-            if res:
-                iplist.append(res.group(1))
-            res = re.match('SSL_accept .+\[([0-9.]+)\]', line)
-            if res:
-                iplist.append(res.group(1))
-except FileNotFoundError:
-    logger.error('file not found! : %s' % (args.logfile))
+def get_ileagal_iplist(logfile):
+    iiplist = []
+    try:
+        with open(logfile, 'r', encoding='utf-8') if not re.search('\.gz$', logfile) else gzip.open(logfile, 'rt') as fh:
+            for line in fh:
+                line = line.rstrip('\n')
+                res = re.match('^.+\[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\].+ SASL [A-Z]+ authentication failed.*$', line)
+                if res:
+                    iiplist.append(res.group(1))
+                res = re.match('SSL_accept .+\[([0-9.]+)\]', line)
+                if res:
+                    iiplist.append(res.group(1))
+    except FileNotFoundError:
+        logger.error('file not found! : %s' % (logfile))
+    
+    return iiplist
+
+def pattern_func_maillog(lst, line):
+    res = re.match('^.+\[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\].+ SASL [A-Z]+ authentication failed.*$', line)
+    if res:
+        lst.append(res.group(1))
+    res = re.match('SSL_accept .+\[([0-9.]+)\]', line)
+    if res:
+        lst.append(res.group(1))
+    return lst
+
+# ログファイルから不正アクセスらしいIPアドレスを取り出してリスト化する（gzipファイルはgzipモジュールのOPENを使用する）
+# 切り出しパターンの分離バージョン
+def get_iiplist(logfile, pattern_func):
+    lst = []
+    try:
+        with open(logfile, 'r', encoding='utf-8') if not re.search('\.gz$', logfile) else gzip.open(logfile, 'rt') as fh:
+            for line in map(lambda ln: ln.rstrip('\n'), fh):
+                lst = pattern_func(lst, line)
+    except FileNotFoundError:
+        logger.error('file not found! : %s' % (logfile))
+    
+    return lst
+
+siplist = get_iiplist(args.logfile, pattern_func_maillog)
 
 # IPアドレス、登場回数のタプルリストにする
-items = array_count(iplist)
+items = array_count(siplist)
 if args.address:
     items[str(args.address)] = 100
 
