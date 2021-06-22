@@ -84,54 +84,13 @@ def ipv4adr(str):
     a = ipv4adrset(str)
     return a
 
-# オプション解析
-parser = argparse.ArgumentParser(description='blockset.py collection of unauthorized access list and restart firewall(ufw)')
-parser.add_argument('logfile', nargs='?', help='input log file default:' + maillog_default, default='')
-parser.add_argument('-n', '--none', action='store_true', help='Check only mode.')
-parser.add_argument('-f', '--force', action='store_true', help='bloclist force update, unless new record.')
-parser.add_argument('-d', '--debug', action='store_true', help='debug print mode')
-parser.add_argument('-u', '--update', action='store_true', help='blocklist update and restart firewall(ufw)')
-parser.add_argument('-o', '--orderck', type=int_tuple, metavar='MASK,COUNT', help='ipset order ckeck')
-parser.add_argument('-c', '--count', type=int, help='abuse count', default = 5)
-parser.add_argument('-a', '--address', type=ipv4adr, help='individually address entry to blacklist')
+def readfile_info(readfunc):
+    def wrapper(*arg):
+        logger.info('use logfile : %s', arg[0])
+        return readfunc(*arg)
+    return wrapper
 
-args = parser.parse_args()
-
-# オプション分岐
-if args.none:
-    logger.info('Check only mode.')
-if args.force:
-    logger.info('firewalld(ipset) force update.')
-if args.debug:
-    logger.info('Debug print mode.')
-if args.orderck:
-    logger.info('ipset order mode.')
-    logger.info('mask bits : %s' % str(args.orderck[0])) 
-    logger.info('count     : %s' % str(args.orderck[1])) 
-
-# 処理開始-解析ログファイルの選択
-if len(args.logfile) == 0:
-    logger.info('use default.')
-    args.logfile = maillog_default
-
-# メールログから不正アクセスに相当するIPアドレスを取り出してリスト化する(gzipファイルはgzipモジュールのOPENを使用する)
-def get_ileagal_iplist(logfile):
-    iiplist = []
-    try:
-        with open(logfile, 'r', encoding='utf-8') if not re.search('\.gz$', logfile) else gzip.open(logfile, 'rt') as fh:
-            for line in fh:
-                line = line.rstrip('\n')
-                res = re.match('^.+\[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\].+ SASL [A-Z]+ authentication failed.*$', line)
-                if res:
-                    iiplist.append(res.group(1))
-                res = re.match('SSL_accept .+\[([0-9.]+)\]', line)
-                if res:
-                    iiplist.append(res.group(1))
-    except FileNotFoundError:
-        logger.error('file not found! : %s' % (logfile))
-    
-    return iiplist
-
+# mail.log から不正アクセスらしいIPアドレスを、リストに追加して返す
 def pattern_func_maillog(lst, line):
     res = re.match('^.+\[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\].+ SASL [A-Z]+ authentication failed.*$', line)
     if res:
@@ -143,6 +102,7 @@ def pattern_func_maillog(lst, line):
 
 # ログファイルから不正アクセスらしいIPアドレスを取り出してリスト化する（gzipファイルはgzipモジュールのOPENを使用する）
 # 切り出しパターンの分離バージョン
+@readfile_info
 def get_iiplist(logfile, pattern_func):
     lst = []
     try:
@@ -154,92 +114,55 @@ def get_iiplist(logfile, pattern_func):
     
     return lst
 
-siplist = get_iiplist(args.logfile, pattern_func_maillog)
-
-# IPアドレス、登場回数のタプルリストにする
-items = array_count(siplist)
-if args.address:
-    items[str(args.address)] = 100
-
-iplist = []
-alist = []
-dlist = []
-
-# 対象ログに登場したIPアドレス集計を表示する（Debug）
-if args.debug:
-    for k in items:
-        logger.info('Redord : %s (%d)' % (k, items[k]))
-
-#一定数(5)以上の出現回数の物のみの IPV4アドレスリストを作成する
-iplist = list(map(lambda t: ipv4adrset(t[0]), filter(lambda t: t[1] >= args.count, items.items())))
-
-# firewall ipsetsのblocklist.xmlを解析する
-#tree = ET.parse(ipset_file)
-#root = tree.getroot()
-
 # 現在設定中のblocklistをリスト化
 #blklst = [aip for aip in map(lambda ip: ipv4adrset(ip.text), root.iter('entry'))]
-blklst = []
-newips = []
-try:
-    with open(ipset_ufw, 'r', encoding='utf-8') as fi:
-        for line in fi:
-            if re.search(ipset_start_line, line):
-                break
-        for line in fi:
-            res = re.match('^.+ ([0-9./]+) .*', line)
-            if res:
-                logger.debug(res[1])
-                blklst.append(ipv4adrset(res[1]))
-                newips.append(res[1])
-            if re.search(ipset_end_line, line):
-                break
-except FileNotFoundError:
-    logger.error('file not found! : %s' % (ipset_ufw))
-    exit('file not found')
-except PermissionError:
-    logger.error('can\'t read %s, please run as superuser!' % (ipset_ufw))
-    exit('permisson errro')
+def get_blocklist_ufw():
+    blist = []
+    try:
+        with open(ipset_ufw, 'r', encoding='utf-8') as fi:
+            for line in fi:
+                if re.search(ipset_start_line, line):
+                    break
+            for line in fi:
+                res = re.match('^.+ ([0-9./]+) .*', line)
+                if res:
+                    logger.debug(res[1])
+                    blist.append(ipv4adrset(res[1]))
+                    # newips.append(res[1])
+                if re.search(ipset_end_line, line):
+                    break
+    except FileNotFoundError:
+        logger.error('file not found! : %s' % (ipset_ufw))
+        exit('file not found')
+    except PermissionError:
+        logger.error('can\'t read %s, please run as superuser!' % (ipset_ufw))
+        exit('permisson errro')
+    return blist
 
-# 今回登場したblocklist候補を登録済でないものに絞る
-iplist = list(filter(lambda ip: ip not in blklst, iplist))
-iplist.sort(key = lambda x: x.ips)
-
-# 新規分を表示
-for k in iplist:
-    s = '.'.join(map(lambda i: str(i), k.ips))
-    if not args.orderck:
-        logger.info('New record : %s (%d)' % (s, items[s]))
-
-# 新規分がなければ終了
-if len(iplist) == 0:
-    if not (args.force or args.orderck):
-        logger.info('no action')
-        exit(0)
-
-# ipset のIPアドレスリストに iplist を加える
-#newips = [ip.text for ip in root.iter('entry')]
-newips += map(lambda ip: str(ip), iplist)
+# IPアドレスオーダーチェック　変数チェック用デコレータ
+def oderck_argck(orderck_func):
+    def wrapper(*arg):
+        checkmask = arg[2]
+        checkcount = arg[3]
+        if checkmask not in range(1,33):
+            sys.exit('order mask error')
+        if checkcount < 1:
+            sys.exit('order check count error')
+        return orderck_func(*arg)
+    return wrapper
 
 # IPアドレスオーダーチェック
-if args.orderck:
-    checkmask = args.orderck[0]
-    if checkmask < 1 or checkmask > 32:
-        exit('mask number error')
-    checkcount = args.orderck[1]
-    if checkcount < 1:
-        exit('count error')
+@oderck_argck
+def address_oder_check(newips, iplist, checkmask, checkcount, debug=False):
     orderdict = {}
-        
     for adr in map(lambda x: ipv4adrset(x), newips):
         hashadr = adr.set_mask(checkmask)   # マスクビットを設定する（対象の方が小さなマスクであれば無視）
         hashstr = str(hashadr)
-        if args.debug:
+        if debug:
             print(hashstr)
         if hashstr not in orderdict:
             orderdict[hashstr] = []
         orderdict[hashstr].append(adr)
-                
     for key, itm in orderdict.items():
         #s = ':'.join(map(lambda x: str(x), itm))
         #print(str(key) + '  =>  ', s)
@@ -247,45 +170,121 @@ if args.orderck:
             for i in itm:
                 print(str(key), ' <= ', str(i))
             newips = list(map(lambda x: x[0] if len(x[1]) > 1 else str(x[1][0]), orderdict.items()))
-
     # order対象外の検出IPアドレスを除く
     newips = list(filter(lambda x: x not in map(lambda ip: str(ip), iplist), newips))
+    return newips
 
-# IPアドレスソート：セグメント数値順
-newips.sort(key=lambda x: ipv4adrset(x).ips)
-
-# before.rules への追加行の作成
-ipset_lines = '\n'.join(map(lambda x: '-A ufw-before-input -s ' + x + ' -j DROP' ,newips)) + '\n'
-
-# アップデートフラグの場合は ipset/blocklist.xml を書き換えてサービス再起動
-write_data = ''
-try:
-    with open(ipset_ufw, 'r', encoding='utf-8') as fi:
-        for line in fi:
-            write_data += line
-            if re.search(ipset_start_line, line):
-                write_data += ipset_lines
-                break
-        for line in fi:
-            if re.search(ipset_end_line, line):
+# ブロックリストをアップデートする（ufw版）
+def set_blocklist_ufw(newips):
+    # before.rules への追加行の作成
+    ipset_lines = '\n'.join(map(lambda x: '-A ufw-before-input -s ' + x + ' -j DROP' ,newips)) + '\n'
+    write_data = ''
+    try:
+        with open(ipset_ufw, 'r', encoding='utf-8') as fi:
+            for line in fi:
                 write_data += line
-                break
-        for line in fi:
-            write_data += line
-except FileNotFoundError:
-    logger.error('before.rules file not found!')
-    exit(1)
-except PermissionError:
-    logger.error('can\'t write to before.rules please check permission!')
-    exit(1)
-if not args.update:
-    # print(write_data)
-    exit(0)
-else:
-    logger.info('update ufw before.rules')
-    with open(ipset_ufw, 'w', encoding='utf-8') as fo:
-        fo.write(write_data)
-    subprocess.call(['/usr/sbin/ufw','reload'])
+                if re.search(ipset_start_line, line):
+                    write_data += ipset_lines
+                    break
+            for line in fi:
+                if re.search(ipset_end_line, line):
+                    write_data += line
+                    break
+            for line in fi:
+                write_data += line
+    except FileNotFoundError:
+        logger.error('before.rules file not found!')
+        exit(1)
+    except PermissionError:
+        logger.error('can\'t read before.rules please check permission!')
+        exit(1)
+    try:
+        logger.info('update ufw before.rules')
+        with open(ipset_ufw, 'w', encoding='utf-8') as fo:
+            fo.write(write_data)
+        subprocess.call(['/usr/sbin/ufw','reload'])
+    except PermissionError:
+        logger.error('can\'t write to before.rules please check permission!')
+        exit(1)
 
-if args.none:
-    exit(0)
+def main():
+    # オプション解析
+    parser = argparse.ArgumentParser(description='blockset.py collection of unauthorized access list and restart firewall(ufw)')
+    parser.add_argument('logfile', nargs='?', help='input log file default:' + maillog_default, default=maillog_default)
+    parser.add_argument('-n', '--none', action='store_true', help='Check only mode.')
+    parser.add_argument('-f', '--force', action='store_true', help='bloclist force update, unless new record.')
+    parser.add_argument('-d', '--debug', action='store_true', help='debug print mode')
+    parser.add_argument('-u', '--update', action='store_true', help='blocklist update and restart firewall(ufw)')
+    parser.add_argument('-o', '--orderck', type=int_tuple, metavar='MASK,COUNT', help='ipset order ckeck')
+    parser.add_argument('-c', '--count', type=int, help='abuse count', default = 5)
+    parser.add_argument('-a', '--address', type=ipv4adr, help='individually address entry to blacklist')
+
+    args = parser.parse_args()
+
+    # オプション分岐
+    if args.none:
+        logger.info('Check only mode.')
+    if args.force:
+        logger.info('firewalld(ipset) force update.')
+    if args.debug:
+        logger.info('Debug print mode.')
+    if args.orderck:
+        logger.info('ipset order mode.')
+        logger.info('mask bits : %s' % str(args.orderck[0])) 
+        logger.info('count     : %s' % str(args.orderck[1])) 
+
+    siplist = get_iiplist(args.logfile, pattern_func_maillog)
+
+    # IPアドレス、登場回数のタプルリストにする
+    items = array_count(siplist)
+    if args.address:
+        items[str(args.address)] = 100
+
+    iplist = []
+
+    # 対象ログに登場したIPアドレス集計を表示する（Debug）
+    if args.debug:
+        for k in items:
+            logger.info('Redord : %s (%d)' % (k, items[k]))
+
+    #一定数(5)以上の出現回数の物のみの IPV4アドレスリストを作成する
+    iplist = list(map(lambda t: ipv4adrset(t[0]), filter(lambda t: t[1] >= args.count, items.items())))
+
+    # firewall ipsetsのblocklist.xmlを解析する
+    #tree = ET.parse(ipset_file)
+    #root = tree.getroot()
+
+    # 設定中のブロックリスト
+    blklst = get_blocklist_ufw()
+    newips = list(map(lambda x: str(x), blklst))
+
+    # 今回登場したblocklist候補を登録済でないものに絞る
+    iplist = list(filter(lambda ip: ip not in blklst, iplist))
+    iplist.sort(key = lambda x: x.ips)
+
+    # 新規分を表示
+    for k in iplist:
+        s = '.'.join(map(lambda i: str(i), k.ips))
+        if not args.orderck:
+            logger.info('New record : %s (%d)' % (s, items[s]))
+
+    # 新規分がなければ終了
+    if len(iplist) == 0:
+        if not (args.force or args.orderck):
+            logger.info('no action')
+            exit(0)
+
+    # ipset のIPアドレスリストに iplist を加える
+    newips += map(lambda ip: str(ip), iplist)
+
+    # オーダーチェック(関数呼び出し後アドレスセグメントをキーにソート)
+    if args.orderck:
+        newips = sorted(address_oder_check(newips, iplist, args.orderck[0], args.orderck[1], args.debug), key=lambda x: ipv4adrset(x).ips)
+
+    # ブロックリストの更新
+    # アップデートフラグの場合は ipset/blocklist.xml を書き換えてサービス再起動
+    if args.update:
+        set_blocklist_ufw(newips)
+
+if __name__ == '__main__':
+    main()
