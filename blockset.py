@@ -143,7 +143,7 @@ def get_blocklist_ufw():
                 if re.search(ipset_start_line, line):
                     break
             for line in fi:
-                res = re.match('^.+ ([0-9./]+) .*', line)
+                res = re.match('^-A ufw-before-input.+ ([0-9./]+) .*DROP.*', line)
                 if res:
                     logger.debug(res[1])
                     blist.append(ipv4adrset(res[1]))
@@ -195,8 +195,10 @@ def address_oder_check(newips, iplist, checkmask, checkcount, debug=False):
 
 # ブロックリストをアップデートする（ufw版）
 def set_blocklist_ufw(newips):
-    # before.rules への追加行の作成
-    ipset_lines = '\n'.join(map(lambda x: '-A ufw-before-input -s ' + x + ' -j DROP' ,newips)) + '\n'
+    # before.rules への追加行の作成(ログ出力とDocker対応)
+    ipset_lines = '\n'.join(map(lambda x: '-A ufw-before-input -s ' + x + ' -j LOG --log-prefix "[BLOCKLIST]"' ,newips)) + '\n'
+    ipset_lines += '\n'.join(map(lambda x: '-A ufw-before-input -s ' + x + ' -j DROP' ,newips)) + '\n'
+    ipset_lines += '\n'.join(map(lambda x: '-A DOCKER-USER -s ' + x + ' -j DROP' ,newips)) + '\n'
     write_data = ''
     try:
         with open(ipset_ufw, 'r', encoding='utf-8') as fi:
@@ -234,9 +236,11 @@ def main():
     parser.add_argument('-f', '--force', action='store_true', help='bloclist force update, unless new record.')
     parser.add_argument('-d', '--debug', action='store_true', help='debug print mode')
     parser.add_argument('-u', '--update', action='store_true', help='blocklist update and restart firewall(ufw)')
+    parser.add_argument('-l', '--list', action='store_true', help='display blocklist')
     parser.add_argument('-o', '--orderck', type=int_tuple, metavar='MASK,COUNT', help='ipset order ckeck')
     parser.add_argument('-c', '--count', type=int, help='abuse count', default = 5)
     parser.add_argument('-a', '--address', type=ipv4adr, help='individually address entry to blacklist')
+    parser.add_argument('-r', '--remove', type=ipv4adr, help='remove address entry from blacklist')
     parser.add_argument('-D', '--days', type=int, help='days of collection', default=1)
 
     args = parser.parse_args()
@@ -259,7 +263,12 @@ def main():
 
     siplist = get_iiplist(args.logfile, st, ed, pattern_func_maillog)
 
-
+    if args.list:
+        blklst = get_blocklist_ufw()
+        logger.info("block list:")
+        for ip in blklst:
+            logger.info(ip)
+        exit(0)
 
     # IPアドレス、登場回数のタプルリストにする
     items = array_count(siplist)
@@ -296,12 +305,18 @@ def main():
 
     # 新規分がなければ終了
     if len(iplist) == 0:
-        if not (args.force or args.orderck):
+        if not (args.force or args.orderck or args.remove):
             logger.info('no action')
             exit(0)
 
     # ipset のIPアドレスリストに iplist を加える
     newips += map(lambda ip: str(ip), iplist)
+
+    if args.remove:
+        newips = [ip for ip in newips if ip != str(args.remove)]
+        print('remove ip %s from blocklist' % str(args.remove))
+        args.update = True
+        #exit(0)
 
     # オーダーチェック(関数呼び出し後アドレスセグメントをキーにソート)
     if args.orderck:
