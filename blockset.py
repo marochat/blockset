@@ -143,7 +143,7 @@ def get_blocklist_ufw():
                 if re.search(ipset_start_line, line):
                     break
             for line in fi:
-                res = re.match('^-A DOCKER-USER.+ ([0-9./]+) .*DROP.*', line)
+                res = re.match('^-A ufw-before-input.+ ([0-9./]+) .*', line)
                 if res:
                     logger.debug(res[1])
                     blist.append(ipv4adrset(res[1]))
@@ -196,9 +196,8 @@ def address_oder_check(newips, iplist, checkmask, checkcount, debug=False):
 # ブロックリストをアップデートする（ufw版）
 def set_blocklist_ufw(newips):
     # before.rules への追加行の作成(ログ出力とDocker対応)
-    ipset_lines = '\n'.join(map(lambda x: '-A DOCKER-USER -s ' + x + ' -j LOG --log-prefix "[BLOCKLIST]"' ,newips)) + '\n'
-    #ipset_lines += '\n'.join(map(lambda x: '-A ufw-before-input -s ' + x + ' -j DROP' ,newips)) + '\n'
-    ipset_lines += '\n'.join(map(lambda x: '-A DOCKER-USER -s ' + x + ' -j DROP' ,newips)) + '\n'
+    ipset_lines = '\n'.join(map(lambda x: '-A ufw-before-input -s ' + x + ' -j auto-blocklist' ,newips)) + '\n'
+    ipset_lines += '\n'.join(map(lambda x: '-A DOCKER-USER -s ' + x + ' -j docker-blocklist' ,newips)) + '\n'
     write_data = ''
     try:
         with open(ipset_ufw, 'r', encoding='utf-8') as fi:
