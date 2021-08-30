@@ -24,6 +24,8 @@ logger.setLevel(loggerLevel)
 logger.addHandler(handler)
 logger.propagate = False
 
+exclusions = ['180.200.119.233']
+
 maillog_default = "/var/log/mail.log"
 
 ipset_file = "blocklist.xml"
@@ -278,8 +280,10 @@ def main():
 
     # 対象ログに登場したIPアドレス集計を表示する（Debug）
     if args.debug:
+        print(exclusions)
         for k in items:
-            logger.info('Redord : %s (%d)' % (k, items[k]))
+            exclude = True if k in exclusions else False
+            logger.info('Redord : %s (%d)%s' % (k, items[k], "" if exclude == False else "exclusion"))
 
     #一定数(5)以上の出現回数の物のみの IPV4アドレスリストを作成する
     iplist = list(map(lambda t: ipv4adrset(t[0]), filter(lambda t: t[1] >= args.count, items.items())))
@@ -299,9 +303,15 @@ def main():
     # 新規分を表示
     for k in iplist:
         s = '.'.join(map(lambda i: str(i), k.ips))
+        exclude = True if str(k) in exclusions else False
         if not args.orderck:
-            logger.info('New record : %s (%d)' % (s, items[s]))
+            logger.info('New record : %s (%d)%s' % (s, items[s],  "" if exclude == False else " exclusion"))
 
+    # 除外処理
+    iplist = [x for x in iplist if str(x) not in exclusions]
+    if args.debug:
+        for k in iplist:
+            logger.info("reporting list: %s" % (str(k)))
     # 新規分がなければ終了
     if len(iplist) == 0:
         if not (args.force or args.orderck or args.remove):
