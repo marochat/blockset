@@ -109,7 +109,7 @@ def readfile_info(readfunc):
 
 # mail.log から不正アクセスらしいIPアドレスを、リストに追加して返す
 def pattern_func_maillog(lst, line):
-    if res := re.match('^.+\[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\].+ SASL [A-Z]+ authentication failed.*$', line):
+    if res := re.search('^.+ postfix.+disconnect.+\[([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\].*(auth|starttls).* commands=[0-9]+/[0-9]+$', line):
         lst.append(res.group(1))
     if res := re.match('SSL_accept .+\[([0-9.]+)\]', line):
         lst.append(res.group(1))
