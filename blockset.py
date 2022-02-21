@@ -5,6 +5,7 @@ import sys,os,glob
 import argparse
 import re
 import numpy as np
+import ipaddress as ip
 #import xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta, tzinfo
 from lxml import etree as ET
@@ -45,7 +46,8 @@ def array_count(array):
     return dat
 
 # IPV4形式のデータを扱うクラス、ネットマスクがあれば/ビット数で保管
-class ipv4adrset:
+# --- 2022/02/21 --- ipaddressライブラリに置き換える作業開始
+class ipv4adrset_old:
     """
     IPV4形式のデータを扱うクラス、xxx.xxx.xxx.xxx or xxx.xxx.xxx.xxx/m
     __eq__(): ネットマスクのビットのみで比較
@@ -96,8 +98,8 @@ def int_tuple(str):
     return t
 
 def ipv4adr(str):
-    """ipv4adrset型の引数を読み取る関数"""
-    a = ipv4adrset(str)
+    """IPv4Interface型の引数を読み取る関数"""
+    a = ip.ip_interface(str)
     return a
 
 def readfile_info(readfunc):
@@ -148,7 +150,7 @@ def get_blocklist_ufw():
                 res = re.match('^-A ufw-before-input.+ ([0-9./]+) .*', line)
                 if res:
                     logger.debug(res[1])
-                    blist.append(ipv4adrset(res[1]))
+                    blist.append(ip.ip_interface(res[1]))
                     # newips.append(res[1])
                 if re.search(ipset_end_line, line):
                     break
@@ -176,9 +178,12 @@ def oderck_argck(orderck_func):
 @oderck_argck
 def address_oder_check(newips, iplist, checkmask, checkcount, debug=False):
     orderdict = {}
-    for adr in map(lambda x: ipv4adrset(x), newips):
-        hashadr = adr.set_mask(checkmask)   # マスクビットを設定する（対象の方が小さなマスクであれば無視）
-        hashstr = str(hashadr)
+    for adr in map(lambda x: ip.ip_interface(x), newips):
+        net1 = adr.network if adr.network.prefixlen >= checkmask else adr.network.supernet(new_prefix=checkmask)
+        #hashadr = adr.set_mask(checkmask)   # マスクビットを設定する（対象の方が小さなマスクであれば無視）
+        hashadr = ip.ip_interface(net1)
+        hashstr = str(hashadr.ip) if hashadr.network.prefixlen == 32 else hashadr.with_prefixlen
+#kokomade
         if debug:
             print(hashstr)
         if hashstr not in orderdict:
