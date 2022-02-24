@@ -5,7 +5,7 @@ import sys,os,glob
 import argparse
 import re
 import numpy as np
-import ipaddress as ip
+import ipaddress as ipa
 #import xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta, tzinfo
 from lxml import etree as ET
@@ -74,10 +74,10 @@ class ipv4adrset_old:
             return self
         msks = [int('1'*n+'0'*(8-n), 2) for n in [8 if (mask - i*8) >= 8 else (mask - i*8) if (mask - i*8) > 0 else 0 for i in range(4)]]
         rip = list(np.array(self.ips) & np.array(msks))
-        ret = ipv4adrset()
-        ret.ips = rip
-        ret.msk = mask
-        return ret
+        #ret = ipv4adrset()
+        #ret.ips = rip
+        #ret.msk = mask
+        #return ret
 
     def __eq__(self, other):
         smsks = [int('1'*n+'0'*(8-n), 2) for n in [ 8 if (self.msk - i*8) >= 8 else (self.msk - i*8) if (self.msk - i*8) > 0 else 0 for i in range(4)]]
@@ -99,7 +99,7 @@ def int_tuple(str):
 
 def ipv4adr(str):
     """IPv4Interface型の引数を読み取る関数"""
-    a = ip.ip_interface(str)
+    a = ipa.ip_interface(str)
     return a
 
 def readfile_info(readfunc):
@@ -150,7 +150,7 @@ def get_blocklist_ufw():
                 res = re.match('^-A ufw-before-input.+ ([0-9./]+) .*', line)
                 if res:
                     logger.debug(res[1])
-                    blist.append(ip.ip_interface(res[1]))
+                    blist.append(ipa.ip_interface(res[1]))
                     # newips.append(res[1])
                 if re.search(ipset_end_line, line):
                     break
@@ -178,11 +178,11 @@ def oderck_argck(orderck_func):
 @oderck_argck
 def address_oder_check(newips, iplist, checkmask, checkcount, debug=False):
     orderdict = {}
-    for adr in map(lambda x: ip.ip_interface(x), newips):
-        net1 = adr.network if adr.network.prefixlen >= checkmask else adr.network.supernet(new_prefix=checkmask)
+    for adr in map(lambda x: ipa.ip_interface(x), newips):
+        net1 = adr.network if adr.network.prefixlen <= checkmask else adr.network.supernet(new_prefix=checkmask)
         #hashadr = adr.set_mask(checkmask)   # マスクビットを設定する（対象の方が小さなマスクであれば無視）
-        hashadr = ip.ip_interface(net1)
-        hashstr = str(hashadr.ip) if hashadr.network.prefixlen == 32 else hashadr.with_prefixlen
+        hashadr = ipa.ip_interface(net1)
+        hashstr = hashadr.ip.exploded if hashadr.network.prefixlen == 32 else hashadr.with_prefixlen
 #kokomade
         if debug:
             print(hashstr)
@@ -291,7 +291,7 @@ def main():
             logger.info('Redord : %s (%d)%s' % (k, items[k], "" if exclude == False else "exclusion"))
 
     #一定数(5)以上の出現回数の物のみの IPV4アドレスリストを作成する
-    iplist = list(map(lambda t: ipv4adrset(t[0]), filter(lambda t: t[1] >= args.count, items.items())))
+    iplist = list(map(lambda t: ipa.ip_interface(t[0]), filter(lambda t: t[1] >= args.count, items.items())))
 
     # firewall ipsetsのblocklist.xmlを解析する
     #tree = ET.parse(ipset_file)
@@ -334,10 +334,11 @@ def main():
 
     # オーダーチェック(関数呼び出し後アドレスセグメントをキーにソート)
     if args.orderck:
-        newips = sorted(address_oder_check(newips, iplist, args.orderck[0], args.orderck[1], args.debug), key=lambda x: ipv4adrset(x).ips)
+        newips = sorted(address_oder_check(newips, iplist, args.orderck[0], args.orderck[1], args.debug), key=lambda x: ipa.ip_interface(x))
 
     # ブロックリストの更新
     # アップデートフラグの場合は ipset/blocklist.xml を書き換えてサービス再起動
+    newips = [x if ipa.ip_network(x).prefixlen < 32 else ipa.ip_interface(x).ip.exploded for x in newips]
     if args.update:
         set_blocklist_ufw(newips)
 
