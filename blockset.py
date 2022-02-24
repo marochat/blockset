@@ -45,53 +45,6 @@ def array_count(array):
         dat[i] = dat[i] + 1 if i in dat.keys() else 1
     return dat
 
-# IPV4形式のデータを扱うクラス、ネットマスクがあれば/ビット数で保管
-# --- 2022/02/21 --- ipaddressライブラリに置き換える作業開始
-class ipv4adrset_old:
-    """
-    IPV4形式のデータを扱うクラス、xxx.xxx.xxx.xxx or xxx.xxx.xxx.xxx/m
-    __eq__(): ネットマスクのビットのみで比較
-            例) 192.168.0.5 と 192.168.0.0/24 は等しいとする
-    """
-    def __init__(self):
-        self.ips = []
-        self.msk = 32
-    def __init__(self, line = None):
-        self.set_line(line)
-
-    def set_line(self, line):
-        if line is None:
-            self.ips = []
-            self.msk = 32
-        else:
-            res = re.match('^([0-9\.]+)\/([0-9]+)$', line)
-            (ip, msk0) = (res.group(1), res.group(2)) if res else (line, 32)
-            self.ips = [int(n) for n in ip.split('.')]
-            self.msk = int(msk0)
-
-    def set_mask(self, mask):
-        if self.msk < mask:
-            return self
-        msks = [int('1'*n+'0'*(8-n), 2) for n in [8 if (mask - i*8) >= 8 else (mask - i*8) if (mask - i*8) > 0 else 0 for i in range(4)]]
-        rip = list(np.array(self.ips) & np.array(msks))
-        #ret = ipv4adrset()
-        #ret.ips = rip
-        #ret.msk = mask
-        #return ret
-
-    def __eq__(self, other):
-        smsks = [int('1'*n+'0'*(8-n), 2) for n in [ 8 if (self.msk - i*8) >= 8 else (self.msk - i*8) if (self.msk - i*8) > 0 else 0 for i in range(4)]]
-        omsks = [int('1'*n+'0'*(8-n), 2) for n in [ 8 if (other.msk - i*8) >= 8 else (other.msk - i*8) if (other.msk - i*8) > 0 else 0 for i in range(4)]]
-        sip = list(np.array(self.ips) & np.array(smsks) & np.array(omsks))
-        oip = list(np.array(other.ips) & np.array(smsks) & np.array(omsks))
-        return sip == oip
-
-    def __str__(self):
-        return '.'.join(map(lambda i: str(i), self.ips)) + ('/' + str(self.msk) if self.msk < 32 else '')
-
-    def __hash__(self):
-        return self.ips[0] * 0x1000000 + self.ips[1] * 0x10000 + self.ips[2] * 0x100 + self.ips[3]
-
 def int_tuple(str):
     """argparseで整数タプルの引数を読み取る関数"""
     t = tuple(map(lambda x: int(x), str.split(',')))
